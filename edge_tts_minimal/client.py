@@ -111,6 +111,78 @@ def _get_headers_and_data(data: bytes, header_length: int) -> tuple:
     return headers, data[header_length + 2:]
 
 
+# Maps detected script to a voice locale prefix for auto-switching.
+_SCRIPT_TO_LOCALE = {
+    "zh": "zh-CN",
+    "ja": "ja-JP",
+    "ko": "ko-KR",
+    "en": "en-US",
+}
+
+_FALLBACK_VOICES = {
+    "zh-CN": "zh-CN-XiaoxiaoNeural",
+    "ja-JP": "ja-JP-NanamiNeural",
+    "ko-KR": "ko-KR-SunHiNeural",
+    "en-US": "en-US-AriaNeural",
+}
+
+
+def _detect_script(text: str) -> str:
+    """Detect the dominant script of *text*.
+
+    Returns one of ``"zh"``, ``"ja"``, ``"ko"``, ``"en"``.
+    """
+    cjk = kana = hangul = latin = 0
+    for ch in text:
+        cp = ord(ch)
+        if 0x4E00 <= cp <= 0x9FFF:
+            cjk += 1
+        elif 0x3040 <= cp <= 0x30FF:
+            kana += 1
+        elif 0xAC00 <= cp <= 0xD7AF:
+            hangul += 1
+        elif 0x41 <= cp <= 0x5A or 0x61 <= cp <= 0x7A:
+            latin += 1
+    total = cjk + kana + hangul + latin
+    if total == 0:
+        return "en"
+    if kana > total * 0.15:
+        return "ja"
+    if cjk > total * 0.3:
+        return "zh"
+    if hangul > total * 0.3:
+        return "ko"
+    return "en"
+
+
+def _compatible_locale(voice: str) -> str:
+    """Extract locale prefix from voice short name (e.g. ``"zh-CN"``)."""
+    for sep in ("-", "_"):
+        for i in range(len(voice)):
+            if voice[i] == sep and i + 3 <= len(voice):
+                return voice[: i + 3]
+    return voice
+
+
+def _resolve_voice(text: str, voice: str) -> tuple[str, str | None]:
+    """Return ``(resolved_voice, warning)``.
+
+    If *voice* is incompatible with the detected script, auto-switch
+    to a matching voice and return a warning message.
+    """
+    script = _detect_script(text)
+    expected = _SCRIPT_TO_LOCALE.get(script, "en-US")
+    compat = _compatible_locale(voice)
+    if compat == expected or compat.split("-")[0] == script:
+        return voice, None
+    fallback = _FALLBACK_VOICES.get(expected, "en-US-AriaNeural")
+    msg = (
+        f"Voice '{voice}' doesn't support this language. "
+        f"Switched to '{fallback}'."
+    )
+    return fallback, msg
+
+
 def _escape_xml(text: str) -> str:
     """Escape text for safe embedding in SSML."""
     return (
@@ -191,8 +263,14 @@ async def synthesize(
     if ssml:
         ssml_chunks = [ssml]
     elif text:
+        resolved_voice, warning = _resolve_voice(text, voice)
+        if warning:
+            import sys
+            print(f"edge-tts-minimal: {warning}", file=sys.stderr)
         clean = _clean_text(text)
-        ssml_chunks = [build_ssml(chunk, voice) for chunk in _split_text(clean)]
+        ssml_chunks = [
+            build_ssml(chunk, resolved_voice) for chunk in _split_text(clean)
+        ]
     else:
         raise ValueError("Either 'text' or 'ssml' must be provided.")
 
