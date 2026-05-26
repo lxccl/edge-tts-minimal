@@ -23,7 +23,7 @@
   textarea:focus, select:focus, input:focus {
     outline:none; border-color:#58a6ff; box-shadow:0 0 0 3px rgba(88,166,255,.15);
   }
-  select {
+  select, input[type="text"] {
     width:100%; background:#161b22; color:#c9d1d9;
     border:1px solid #30363d; border-radius:6px;
     padding:8px 12px; font:inherit;
@@ -46,12 +46,23 @@
   .file-btn:hover { background:#30363d; }
   #file-name { font-size:12px; color:#8b949e; margin-left:8px; }
   input[type="file"] { display:none; }
+  .config { margin-bottom:12px; display:flex; gap:8px; align-items:center; }
+  .config input { flex:1; }
+  .config span { font-size:13px; color:#8b949e; white-space:nowrap; }
 </style>
 </head>
 <body>
 
 <h1>Edge TTS</h1>
-<div class="sub">Pure browser — connects directly to Microsoft &mdash; <span id="voice-count">loading...</span></div>
+<div class="sub">
+  Free text-to-speech, no API key &mdash;
+  <span id="voice-count">loading...</span>
+</div>
+
+<div class="config">
+  <span>API:</span>
+  <input type="text" id="api-base" value="http://127.0.0.1:8100" placeholder="http://127.0.0.1:8100">
+</div>
 
 <label for="text">Text</label>
 <textarea id="text" placeholder="Type or paste text here..."></textarea>
@@ -67,281 +78,75 @@
 <audio id="player" class="hidden" controls></audio>
 
 <script>
-// ── constants ──────────────────────────────────────────────
-const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-const CHROMIUM_VERSION = "143.0.3650.75";
-const CHROMIUM_MAJOR = "143";
-const SEC_MS_GEC_VERSION = "1-" + CHROMIUM_VERSION;
-const WIN_EPOCH = 11644473600;
-
-const WSS_BASE = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
-const VOICE_LIST_URL = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=" + TRUSTED_CLIENT_TOKEN;
-
-const FALLBACK_VOICES = {
-  "zh-CN": "zh-CN-XiaoxiaoNeural",
-  "ja-JP": "ja-JP-NanamiNeural",
-  "ko-KR": "ko-KR-SunHiNeural",
-  "en-US": "en-US-AriaNeural",
-};
-
-// ── helpers ────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-
-function uuidHex() {
-  return crypto.randomUUID().replace(/-/g, "");
-}
-
-async function sha256hex(data) {
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
-async function generateSecMsGec() {
-  let ticks = Date.now() / 1000;
-  ticks += WIN_EPOCH;
-  ticks -= ticks % 300;
-  ticks = Math.round(ticks * 1e7);
-  const payload = ticks + TRUSTED_CLIENT_TOKEN;
-  return await sha256hex(new TextEncoder().encode(payload));
-}
-
-function buildWssUrl() {
-  return WSS_BASE +
-    "?TrustedClientToken=" + TRUSTED_CLIENT_TOKEN +
-    "&ConnectionId=" + uuidHex();
-}
-
-function dateToString() {
-  const d = new Date();
-  const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const pad = n => String(n).padStart(2, "0");
-  return days[d.getUTCDay()] + " " +
-    months[d.getUTCMonth()] + " " +
-    pad(d.getUTCDate()) + " " +
-    d.getUTCFullYear() + " " +
-    pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds()) +
-    " GMT+0000 (Coordinated Universal Time)";
-}
-
-function escapeXml(s) {
-  return s.replace(/&/g, "&amp;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&apos;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-}
-
-function cleanText(text) {
-  let s = "";
-  for (const ch of text) {
-    const c = ch.charCodeAt(0);
-    s += ((c >= 0 && c <= 8) || (c >= 11 && c <= 12) || (c >= 14 && c <= 31)) ? " " : ch;
-  }
-  return escapeXml(s);
-}
-
-function buildSsml(text, voice) {
-  return '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" ' +
-         'xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">' +
-         '<voice name="' + voice + '">' + text + '</voice></speak>';
-}
-
-function detectScript(text) {
-  let cjk = 0, kana = 0, hangul = 0, latin = 0;
-  for (const ch of text) {
-    const c = ch.charCodeAt(0);
-    if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
-    else if (c >= 0x3040 && c <= 0x30FF) kana++;
-    else if (c >= 0xAC00 && c <= 0xD7AF) hangul++;
-    else if ((c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)) latin++;
-  }
-  const total = cjk + kana + hangul + latin || 1;
-  if (kana > total * 0.15) return "ja-JP";
-  if (cjk > total * 0.3) return "zh-CN";
-  if (hangul > total * 0.3) return "ko-KR";
-  return "en-US";
-}
-
-function compatibleVoice(text, voice) {
-  const detected = detectScript(text);
-  const prefix = detected.split("-")[0];
-  if (voice.startsWith(detected) || voice.split("-")[0] === prefix) return voice;
-  return FALLBACK_VOICES[detected] || "en-US-AriaNeural";
-}
-
-// ── split text into <= 3000 byte chunks ────────────────────
-function splitText(text, maxBytes = 3000) {
-  const chunks = [];
-  while (new TextEncoder().encode(text).length > maxBytes) {
-    let seg = text.slice(0, maxBytes + 1);
-    let splitAt = -1;
-    for (const sep of ["\n", ".", ",", " "]) {
-      const idx = seg.lastIndexOf(sep);
-      if (idx > maxBytes / 2) { splitAt = idx + 1; break; }
-    }
-    if (splitAt < 0) {
-      const bytes = new TextEncoder().encode(text).slice(0, maxBytes);
-      splitAt = new TextDecoder().decode(bytes).length;
-    }
-    chunks.push(text.slice(0, splitAt).trim());
-    text = text.slice(splitAt).trim();
-  }
-  if (text) chunks.push(text);
-  return chunks;
-}
-
-// ── voices ─────────────────────────────────────────────────
 let voices = [];
 
-async function loadVoices() {
+async function init() {
+  const api = apiBase();
   try {
-    const res = await fetch(VOICE_LIST_URL);
+    const res = await fetch(api + '/api/voices');
     voices = await res.json();
-  } catch(e) {
-    // offline fallback — a minimal list
-    voices = [
-      {ShortName:"en-US-AriaNeural", Locale:"en-US", Gender:"Female"},
-      {ShortName:"zh-CN-XiaoxiaoNeural", Locale:"zh-CN", Gender:"Female"},
-      {ShortName:"zh-CN-YunxiNeural", Locale:"zh-CN", Gender:"Male"},
-      {ShortName:"ja-JP-NanamiNeural", Locale:"ja-JP", Gender:"Female"},
-      {ShortName:"ko-KR-SunHiNeural", Locale:"ko-KR", Gender:"Female"},
-    ];
-  }
-  const sel = $("voice");
-  voices.forEach(v => {
-    const opt = document.createElement("option");
-    if (v.ShortName === "en-US-AriaNeural") opt.selected = true;
-    opt.value = v.ShortName;
-    opt.textContent = v.ShortName + " (" + v.Locale + " " + v.Gender + ")";
-    sel.appendChild(opt);
-  });
-  $("voice-count").textContent = voices.length + " voices";
-}
-
-// ── TTS engine ─────────────────────────────────────────────
-async function synthesize(text, voice) {
-  // resolve voice + chunk text
-  const resolvedVoice = compatibleVoice(text, voice);
-  if (resolvedVoice !== voice) {
-    $("status").textContent = "Auto-switched voice: " + voice + " → " + resolvedVoice;
-  }
-  voice = resolvedVoice;
-
-  const clean = cleanText(text);
-  const chunks = splitText(clean);
-  const gecToken = await generateSecMsGec();
-
-  // Each chunk is a separate WSS connection with its own Sec-MS-GEC
-  // (the token is valid for a 5-minute window, so fast reuse is fine)
-  let allAudio = new Uint8Array(0);
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    const chunk = chunks[ci];
-    const url = buildWssUrl() +
-      "&Sec-MS-GEC=" + gecToken +
-      "&Sec-MS-GEC-Version=" + SEC_MS_GEC_VERSION;
-
-    const ts = dateToString();
-    const reqId = uuidHex();
-
-    await new Promise((resolve, reject) => {
-      const ws = new WebSocket(url);
-
-      ws.onopen = () => {
-        // config
-        ws.send(
-          "X-Timestamp:" + ts + "\r\n" +
-          "Content-Type:application/json; charset=utf-8\r\n" +
-          "Path:speech.config\r\n\r\n" +
-          '{"context":{"synthesis":{"audio":{"metadataoptions":{' +
-          '"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":true' +
-          '},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}'
-        );
-
-        // ssml
-        ws.send(
-          "X-RequestId:" + reqId + "\r\n" +
-          "Content-Type:application/ssml+xml\r\n" +
-          "X-Timestamp:" + ts + "Z\r\n" +
-          "Path:ssml\r\n\r\n" +
-          buildSsml(chunk, voice)
-        );
-      };
-
-      ws.onmessage = (e) => {
-        if (typeof e.data === "string") {
-          if (e.data.includes('"Path":"turn.end"')) {
-            ws.close(1000);
-          }
-          return;
-        }
-        // binary: 2-byte header length, then headers, then body
-        const buf = new Uint8Array(e.data);
-        if (buf.length < 2) return;
-        const headerLen = (buf[0] << 8) | buf[1];
-        if (headerLen >= buf.length) return;
-        // check path
-        const headerBytes = buf.slice(2, 2 + headerLen);
-        const headerStr = new TextDecoder().decode(headerBytes);
-        if (headerStr.includes("Path:audio")) {
-          const start = 2 + headerLen + 2; // skip 2-byte len + headers + \r\n
-          const audioChunk = buf.slice(start);
-          const merged = new Uint8Array(allAudio.length + audioChunk.length);
-          merged.set(allAudio);
-          merged.set(audioChunk, allAudio.length);
-          allAudio = merged;
-        }
-      };
-
-      ws.onerror = () => reject(new Error("WebSocket error (check console)"));
-      ws.onclose = (e) => {
-        if (e.code === 1000) resolve();
-        else reject(new Error("Connection closed: " + e.code));
-      };
+    $('voice-count').textContent = voices.length + ' voices available';
+    const sel = $('voice');
+    voices.forEach(v => {
+      const opt = document.createElement('option');
+      if (v.ShortName === 'en-US-AriaNeural') opt.selected = true;
+      opt.value = v.ShortName;
+      opt.textContent = `${v.ShortName} (${v.Locale} ${v.Gender})`;
+      sel.appendChild(opt);
     });
+  } catch(e) {
+    $('voice-count').textContent = 'cannot reach API at ' + api;
   }
-
-  if (allAudio.length === 0) throw new Error("No audio received");
-  return allAudio;
 }
 
-// ── UI handlers ────────────────────────────────────────────
-$("file-upload").addEventListener("change", async e => {
+function apiBase() {
+  return $('api-base').value.replace(/\/+$/, '');
+}
+
+$('file-upload').addEventListener('change', async e => {
   const f = e.target.files[0];
   if (!f) return;
-  $("file-name").textContent = f.name;
-  $("text").value = await f.text();
+  $('file-name').textContent = f.name;
+  $('text').value = await f.text();
 });
 
 async function speak() {
-  const text = $("text").value.trim();
-  if (!text) { $("status").textContent = "Please enter some text."; return; }
+  const text = $('text').value.trim();
+  if (!text) { $('status').textContent = 'Please enter some text.'; return; }
 
-  const btn = $("btn");
+  const btn = $('btn');
   btn.disabled = true;
-  btn.textContent = "Synthesizing...";
-  $("status").textContent = "";
-  $("player").classList.add("hidden");
+  btn.textContent = 'Synthesizing...';
+  $('status').textContent = '';
 
   try {
-    const audio = await synthesize(text, $("voice").value);
-    const blob = new Blob([audio], {type: "audio/mpeg"});
+    const res = await fetch(apiBase() + '/api/synthesize', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text, voice: $('voice').value }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      $('status').textContent = 'Error: ' + (err.detail || res.statusText);
+      return;
+    }
+    const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    const player = $("player");
+    const player = $('player');
     player.src = url;
-    player.classList.remove("hidden");
+    player.classList.remove('hidden');
     player.play();
-    $("status").textContent = "Done — " + (blob.size / 1024).toFixed(1) + " KB";
+    $('status').textContent = `Done — ${(blob.size/1024).toFixed(1)} KB`;
   } catch(e) {
-    $("status").textContent = "Error: " + e.message;
+    $('status').textContent = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
-    btn.textContent = "Synthesize";
+    btn.textContent = 'Synthesize';
   }
 }
 
-loadVoices();
+init();
 </script>
 </body>
 </html>
