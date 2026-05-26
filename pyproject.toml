@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "edge-tts-minimal"
+version = "0.1.0"
+description = "Free text-to-speech via Microsoft Edge's TTS service — no API key required"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp>=3.9",
+    "certifi>=2024",
+]
+
+[project.scripts]
+edge-tts-minimal = "edge_tts_minimal.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/user/edge-tts-minimal"
+Repository = "https://github.com/user/edge-tts-minimal"
