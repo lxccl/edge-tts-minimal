@@ -1,13 +1,4 @@
-"""Web UI for Edge TTS — run with: edge-tts-minimal web"""
-
-import base64
-
-import aiohttp
-from aiohttp import web
-
-from .client import list_voices, synthesize
-
-HTML = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -21,7 +12,7 @@ HTML = """<!DOCTYPE html>
     background:#0d1117; color:#c9d1d9;
     max-width:720px; margin:40px auto; padding:0 16px;
   }
-  h1 { font-size:20px; margin-bottom:8px; color:#58a6ff; }
+  h1 { font-size:20px; margin-bottom:4px; color:#58a6ff; }
   .sub { color:#8b949e; margin-bottom:24px; font-size:13px; }
   label { display:block; margin:16px 0 4px; font-weight:600; }
   textarea {
@@ -29,12 +20,10 @@ HTML = """<!DOCTYPE html>
     background:#161b22; color:#c9d1d9; border:1px solid #30363d;
     border-radius:6px; padding:12px; font:inherit;
   }
-  textarea:focus, select:focus {
+  textarea:focus, select:focus, input:focus {
     outline:none; border-color:#58a6ff; box-shadow:0 0 0 3px rgba(88,166,255,.15);
   }
-  .row { display:flex; gap:12px; }
-  .row > * { flex:1; }
-  select, input {
+  select, input[type="text"] {
     width:100%; background:#161b22; color:#c9d1d9;
     border:1px solid #30363d; border-radius:6px;
     padding:8px 12px; font:inherit;
@@ -49,24 +38,35 @@ HTML = """<!DOCTYPE html>
   #status { margin-top:12px; font-size:13px; color:#8b949e; min-height:20px; }
   audio { width:100%; margin-top:12px; }
   .hidden { display:none; }
-  #file-name { font-size:12px; color:#8b949e; margin-left:8px; }
-  input[type="file"] { display:none; }
   .file-btn {
     display:inline-block; padding:6px 14px; margin-top:6px;
     background:#21262d; border:1px solid #30363d; border-radius:6px;
     cursor:pointer; font-size:13px;
   }
   .file-btn:hover { background:#30363d; }
+  #file-name { font-size:12px; color:#8b949e; margin-left:8px; }
+  input[type="file"] { display:none; }
+  .config { margin-bottom:12px; display:flex; gap:8px; align-items:center; }
+  .config input { flex:1; }
+  .config span { font-size:13px; color:#8b949e; white-space:nowrap; }
 </style>
 </head>
 <body>
 
 <h1>Edge TTS</h1>
-<div class="sub">Free text-to-speech, no API key needed &mdash; <span id="voice-count">loading voices...</span></div>
+<div class="sub">
+  Free text-to-speech, no API key &mdash;
+  <span id="voice-count">loading...</span>
+</div>
+
+<div class="config">
+  <span>API:</span>
+  <input type="text" id="api-base" value="http://127.0.0.1:8100" placeholder="http://127.0.0.1:8100">
+</div>
 
 <label for="text">Text</label>
 <textarea id="text" placeholder="Type or paste text here..."></textarea>
-<label class="file-btn" for="file-upload" onclick="">Upload file</label>
+<label class="file-btn" for="file-upload">Upload file</label>
 <input type="file" id="file-upload" accept=".txt,.md,.html,.json,.csv">
 <span id="file-name"></span>
 
@@ -82,18 +82,26 @@ const $ = id => document.getElementById(id);
 let voices = [];
 
 async function init() {
-  const res = await fetch('/api/voices');
-  voices = await res.json();
-  $('voice-count').textContent = voices.length + ' voices available';
-  const sel = $('voice');
-  voices.forEach(v => {
-    const opt = document.createElement('option');
-    // default to en-US-AriaNeural
-    if (v.ShortName === 'en-US-AriaNeural') opt.selected = true;
-    opt.value = v.ShortName;
-    opt.textContent = `${v.ShortName} (${v.Locale} ${v.Gender})`;
-    sel.appendChild(opt);
-  });
+  const api = apiBase();
+  try {
+    const res = await fetch(api + '/api/voices');
+    voices = await res.json();
+    $('voice-count').textContent = voices.length + ' voices available';
+    const sel = $('voice');
+    voices.forEach(v => {
+      const opt = document.createElement('option');
+      if (v.ShortName === 'en-US-AriaNeural') opt.selected = true;
+      opt.value = v.ShortName;
+      opt.textContent = `${v.ShortName} (${v.Locale} ${v.Gender})`;
+      sel.appendChild(opt);
+    });
+  } catch(e) {
+    $('voice-count').textContent = 'cannot reach API at ' + api;
+  }
+}
+
+function apiBase() {
+  return $('api-base').value.replace(/\/+$/, '');
 }
 
 $('file-upload').addEventListener('change', async e => {
@@ -113,7 +121,7 @@ async function speak() {
   $('status').textContent = '';
 
   try {
-    const res = await fetch('/api/synthesize', {
+    const res = await fetch(apiBase() + '/api/synthesize', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ text, voice: $('voice').value }),
@@ -131,7 +139,7 @@ async function speak() {
     player.play();
     $('status').textContent = `Done — ${(blob.size/1024).toFixed(1)} KB`;
   } catch(e) {
-    $('status').textContent = 'Network error: ' + e.message;
+    $('status').textContent = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
     btn.textContent = 'Synthesize';
@@ -141,67 +149,4 @@ async function speak() {
 init();
 </script>
 </body>
-</html>"""
-
-
-async def api_list_voices(_request: web.Request) -> web.Response:
-    voices = await list_voices()
-    return web.json_response(voices)
-
-
-async def api_synthesize(request: web.Request) -> web.Response:
-    try:
-        body = await request.json()
-    except Exception:
-        raise web.HTTPBadRequest(text="Invalid JSON")
-
-    text = body.get("text", "").strip()
-    voice = body.get("voice", "en-US-AriaNeural")
-
-    if not text:
-        raise web.HTTPBadRequest(text="Text is required")
-
-    try:
-        audio = await synthesize(text=text, voice=voice)
-    except Exception as e:
-        raise web.HTTPInternalServerError(text=str(e))
-
-    return web.Response(body=audio, content_type="audio/mpeg")
-
-
-async def index(_request: web.Request) -> web.Response:
-    return web.Response(body=HTML, content_type="text/html")
-
-
-@web.middleware
-async def cors_middleware(request: web.Request, handler):
-    if request.method == "OPTIONS":
-        resp = web.Response()
-    else:
-        resp = await handler(request)
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    return resp
-
-
-def create_app() -> web.Application:
-    app = web.Application(middlewares=[cors_middleware])
-    app.router.add_get("/", index)
-    app.router.add_get("/api/voices", api_list_voices)
-    app.router.add_post("/api/synthesize", api_synthesize)
-    return app
-
-
-def run_server(port: int = 8100) -> None:
-    import asyncio
-    app = create_app()
-    print(f"Edge TTS Web UI → http://127.0.0.1:{port}")
-    try:
-        web.run_app(app, host="127.0.0.1", port=port)
-    except OSError as e:
-        if "10048" in str(e) or "address already in use" in str(e).lower():
-            print(f"Port {port} is already in use.", file=__import__("sys").stderr)
-            print(f"Try: edge-tts-minimal web -p {port + 1}", file=__import__("sys").stderr)
-        else:
-            raise
+</html>

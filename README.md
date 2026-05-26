@@ -36,6 +36,18 @@ edge-tts-minimal web
 
 A browser-based interface with text input, file upload, voice picker, and inline audio playback.
 
+### IIS / static deployment
+
+The file `static/index.html` can be served from **any web server** (IIS, Nginx, GitHub Pages, etc.) — even opened directly from disk. It calls the Python API in the background.
+
+```bash
+# 1. Start the Python API
+edge-tts-minimal web
+
+# 2. Open static/index.html in a browser, or deploy it to IIS
+#    The page auto-connects to http://127.0.0.1:8100
+```
+
 ### CLI
 
 ```bash
