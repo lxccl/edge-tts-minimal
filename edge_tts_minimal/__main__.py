@@ -17,6 +17,11 @@ def main() -> None:
             print(f"{v['ShortName']:40s} {v['Locale']:12s} {v['Gender']}")
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "web":
+        from .web import run_server
+        run_server()
+        return
+
     parser = argparse.ArgumentParser(
         prog="edge-tts-minimal",
         description="Text-to-speech via Microsoft Edge's free TTS service.",

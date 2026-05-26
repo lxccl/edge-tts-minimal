@@ -27,6 +27,15 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Web UI
+
+```bash
+edge-tts-minimal web
+# Open http://127.0.0.1:8100
+```
+
+A browser-based interface with text input, file upload, voice picker, and inline audio playback.
+
 ### CLI
 
 ```bash
