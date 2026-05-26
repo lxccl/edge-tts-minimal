@@ -155,7 +155,7 @@ def _split_text(text: str, max_bytes: int = 3000) -> list[str]:
     return chunks
 
 
-def build_ssml(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
+def build_ssml(text: str, voice: str = "en-US-AriaNeural") -> str:
     """Wrap plain text in a minimal SSML document. Text is auto-escaped."""
     return (
         f"<speak version='1.0'"
@@ -170,7 +170,7 @@ def build_ssml(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
 async def synthesize(
     text: str | None = None,
     ssml: str | None = None,
-    voice: str = "zh-CN-XiaoxiaoNeural",
+    voice: str = "en-US-AriaNeural",
     output: str | None = None,
 ) -> bytes:
     """Synthesize speech and return MP3 bytes.

@@ -5,7 +5,7 @@ async def main():
     # Simple text-to-speech
     audio = await synthesize(
         text="Hello world! This is a free text to speech demo.",
-        voice="zh-CN-XiaoxiaoNeural",
+        voice="en-US-AriaNeural",
         output="hello.mp3",
     )
     print(f"Generated {len(audio)} bytes of audio")

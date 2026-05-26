@@ -25,8 +25,8 @@ def main() -> None:
     src.add_argument("text", nargs="?", help="Text to speak")
     src.add_argument("-f", "--file", help="Read text from file")
     parser.add_argument(
-        "-v", "--voice", default="zh-CN-XiaoxiaoNeural",
-        help="Voice short name (default: zh-CN-XiaoxiaoNeural)",
+        "-v", "--voice", default="en-US-AriaNeural",
+        help="Voice short name (default: en-US-AriaNeural)",
     )
     parser.add_argument("-o", "--output", default="output.mp3", help="Output MP3 path")
     parser.add_argument(

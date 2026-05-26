@@ -30,14 +30,14 @@ pip install -r requirements.txt
 ### CLI
 
 ```bash
-# 直接合成（默认中文女声）
-edge-tts-minimal "你好世界"
+# 直接合成（默认英文女声）
+edge-tts-minimal "Hello world"
 
 # 从文件读取
 edge-tts-minimal -f input.txt
 
 # 指定发音人和输出
-edge-tts-minimal "你好" -v zh-CN-YunxiNeural -o result.mp3
+edge-tts-minimal "你好世界" -v zh-CN-XiaoxiaoNeural -o output.mp3
 
 # 列出 322 位发音人
 edge-tts-minimal voices
@@ -51,8 +51,8 @@ from edge_tts_minimal import synthesize
 
 async def main():
     audio = await synthesize(
-        text="你好，这是一个测试。",
-        voice="zh-CN-XiaoxiaoNeural",
+        text="Hello, this is a test.",
+        voice="en-US-AriaNeural",
         output="test.mp3",
     )
 
@@ -64,10 +64,10 @@ asyncio.run(main())
 ```python
 ssml = """
 <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis'>
-    <voice name='zh-CN-XiaoxiaoNeural'>
-        <prosody rate="slow">你好</prosody>
+    <voice name='en-US-AriaNeural'>
+        <prosody rate="slow">Hello</prosody>
         <break time="500ms"/>
-        <prosody rate="fast">世界！</prosody>
+        <prosody rate="fast">world!</prosody>
     </voice>
 </speak>
 """
@@ -78,10 +78,13 @@ audio = await synthesize(ssml=ssml, output="styled.mp3")
 
 | Voice | Locale | Gender |
 |---|---|---|
+| `en-US-AriaNeural` | English (US) | Female |
+| `en-US-GuyNeural` | English (US) | Male |
+| `en-GB-SoniaNeural` | English (UK) | Female |
 | `zh-CN-XiaoxiaoNeural` | Chinese (CN) | Female |
 | `zh-CN-YunxiNeural` | Chinese (CN) | Male |
-| `zh-CN-XiaoyiNeural` | Chinese (CN) | Female |
-| `en-US-AriaNeural` | English (US) | Female |
+| `ja-JP-NanamiNeural` | Japanese | Female |
+| `ko-KR-SunHiNeural` | Korean | Female |
 | `en-US-GuyNeural` | English (US) | Male |
 | `en-GB-SoniaNeural` | English (UK) | Female |
 | `ja-JP-NanamiNeural` | Japanese | Female |
