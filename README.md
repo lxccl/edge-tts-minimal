@@ -30,17 +30,17 @@ pip install -r requirements.txt
 ### CLI
 
 ```bash
-# 生成语音（默认中文女声）
-python -m edge_tts_minimal speak "你好世界"
+# 直接合成（默认中文女声）
+edge-tts-minimal "你好世界"
 
-# 指定发音人和输出文件
-python -m edge_tts_minimal speak "你好世界" -v zh-CN-XiaoxiaoNeural -o output.mp3
+# 从文件读取
+edge-tts-minimal -f input.txt
 
-# 英文
-python -m edge_tts_minimal speak "Hello world" -v en-US-AriaNeural
+# 指定发音人和输出
+edge-tts-minimal "你好" -v zh-CN-YunxiNeural -o result.mp3
 
-# 列出所有 322 位发音人
-python -m edge_tts_minimal voices
+# 列出 322 位发音人
+edge-tts-minimal voices
 ```
 
 ### Python API
