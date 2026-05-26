@@ -111,14 +111,58 @@ def _get_headers_and_data(data: bytes, header_length: int) -> tuple:
     return headers, data[header_length + 2:]
 
 
+def _escape_xml(text: str) -> str:
+    """Escape text for safe embedding in SSML."""
+    return (
+        text.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _clean_text(text: str) -> str:
+    """Remove control characters the service rejects, then XML-escape."""
+    chars = list(text)
+    for i, ch in enumerate(chars):
+        code = ord(ch)
+        if (0 <= code <= 8) or (11 <= code <= 12) or (14 <= code <= 31):
+            chars[i] = " "
+    return _escape_xml("".join(chars))
+
+
+def _split_text(text: str, max_bytes: int = 3000) -> list[str]:
+    """Split text so each chunk stays within *max_bytes* UTF-8 bytes."""
+    chunks: list[str] = []
+    while len(text.encode("utf-8")) > max_bytes:
+        # find natural split point near max_bytes
+        segment = text[:max_bytes + 1]
+        split_at = -1
+        for sep in ("\n", "。", ".", "，", ",", " "):
+            idx = segment.rfind(sep)
+            if idx > max_bytes // 2:
+                split_at = idx + 1
+                break
+        if split_at < 0:
+            # force-split at byte boundary
+            raw = text.encode("utf-8")[:max_bytes]
+            split_at = len(raw.decode("utf-8", errors="ignore"))
+        chunks.append(text[:split_at].strip())
+        text = text[split_at:].strip()
+    if text:
+        chunks.append(text)
+    return chunks
+
+
 def build_ssml(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
-    """Wrap plain text in a minimal SSML document."""
+    """Wrap plain text in a minimal SSML document. Text is auto-escaped."""
     return (
         f"<speak version='1.0'"
         f" xmlns='http://www.w3.org/2001/10/synthesis'"
         f" xmlns:mstts='https://www.w3.org/2001/mstts'"
         f" xml:lang='en-US'>"
-        f"<voice name='{voice}'>{text}</voice>"
+        f"<voice name='{voice}'>{_escape_xml(text)}</voice>"
         f"</speak>"
     )
 
@@ -131,26 +175,32 @@ async def synthesize(
 ) -> bytes:
     """Synthesize speech and return MP3 bytes.
 
+    Long *text* is automatically split into chunks, each sent as a
+    separate SSML frame in a single WebSocket session.  Raw *ssml* is
+    sent as-is (no escaping / chunking).
+
     Args:
         text:   Plain text to speak (mutually exclusive with *ssml*).
         ssml:   Raw SSML string. When provided, *voice* is ignored.
-        voice:  Short name of the neural voice (e.g. ``"zh-CN-XiaoxiaoNeural"``).
+        voice:  Short name of the neural voice.
         output: Optional file path to write the MP3 to.
 
     Returns:
         Raw MP3 audio bytes.
     """
     if ssml:
-        ssml_text = ssml
+        ssml_chunks = [ssml]
     elif text:
-        ssml_text = build_ssml(text, voice)
+        clean = _clean_text(text)
+        ssml_chunks = [build_ssml(chunk, voice) for chunk in _split_text(clean)]
     else:
         raise ValueError("Either 'text' or 'ssml' must be provided.")
 
-    request_id = uuid.uuid4().hex
     timestamp = _date_to_string()
     headers = dict(_WSS_HEADERS)
     headers["Cookie"] = f"muid={_generate_muid()};"
+
+    audio = b""
 
     async with aiohttp.ClientSession(
         trust_env=True,
@@ -161,7 +211,7 @@ async def synthesize(
         compress=15,
         ssl=_SSL_CTX,
     ) as ws:
-        # 1. Send config frame
+        # 1. Config (once)
         await ws.send_str(
             f"X-Timestamp:{timestamp}\r\n"
             f"Content-Type:application/json; charset=utf-8\r\n"
@@ -171,32 +221,32 @@ async def synthesize(
             f'"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}}}}}'
         )
 
-        # 2. Send SSML frame
-        await ws.send_str(
-            f"X-RequestId:{request_id}\r\n"
-            f"Content-Type:application/ssml+xml\r\n"
-            f"X-Timestamp:{timestamp}Z\r\n"
-            f"Path:ssml\r\n\r\n"
-            f"{ssml_text}"
-        )
+        # 2. Send each SSML chunk, collect audio until turn.end
+        for ssml_text in ssml_chunks:
+            request_id = uuid.uuid4().hex
+            await ws.send_str(
+                f"X-RequestId:{request_id}\r\n"
+                f"Content-Type:application/ssml+xml\r\n"
+                f"X-Timestamp:{timestamp}Z\r\n"
+                f"Path:ssml\r\n\r\n"
+                f"{ssml_text}"
+            )
 
-        # 3. Collect audio
-        audio = b""
-        async for msg in ws:
-            if msg.type == aiohttp.WSMsgType.BINARY:
-                if len(msg.data) < 2:
-                    continue
-                header_len = int.from_bytes(msg.data[:2], "big")
-                if header_len > len(msg.data):
-                    continue
-                params, data = _get_headers_and_data(msg.data, header_len)
-                if params.get(b"Path") == b"audio":
-                    audio += data
-            elif msg.type == aiohttp.WSMsgType.TEXT:
-                if b"Path:turn.end" in msg.data.encode():
-                    break
-            elif msg.type == aiohttp.WSMsgType.ERROR:
-                raise RuntimeError(f"WebSocket error: {msg.data}")
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.BINARY:
+                    if len(msg.data) < 2:
+                        continue
+                    header_len = int.from_bytes(msg.data[:2], "big")
+                    if header_len > len(msg.data):
+                        continue
+                    params, data = _get_headers_and_data(msg.data, header_len)
+                    if params.get(b"Path") == b"audio":
+                        audio += data
+                elif msg.type == aiohttp.WSMsgType.TEXT:
+                    if b"Path:turn.end" in msg.data.encode():
+                        break
+                elif msg.type == aiohttp.WSMsgType.ERROR:
+                    raise RuntimeError(f"WebSocket error: {msg.data}")
 
     if not audio:
         raise RuntimeError(
