@@ -18,8 +18,8 @@ def main() -> None:
     speak = sub.add_parser("speak", help="Convert text to MP3")
     speak.add_argument("text", help="Text to speak")
     speak.add_argument(
-        "-v", "--voice", default="en-US-AriaNeural",
-        help="Voice short name (default: en-US-AriaNeural)",
+        "-v", "--voice", default="zh-CN-XiaoxiaoNeural",
+        help="Voice short name (default: zh-CN-XiaoxiaoNeural)",
     )
     speak.add_argument("-o", "--output", default="output.mp3", help="Output MP3 path")
     speak.add_argument(

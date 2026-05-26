@@ -8,10 +8,10 @@ This library mimics the WebSocket protocol that Microsoft Edge browser uses for 
 
 | Feature | Details |
 |---|---|
-| Voices | 500+ neural voices across 100+ locales |
-| Formats | MP3, OGG, WAV (24 kHz) |
-| Auth | No API key — uses Edge's public trust token |
-| Dependencies | Python 3.10+, `websockets`, `aiohttp` |
+| Voices | 322 neural voices across 100+ locales |
+| Formats | MP3 (24 kHz, 48 kbps) |
+| Auth | No API key — uses Edge's public trust token + dynamic DRM token |
+| Dependencies | Python 3.10+, `aiohttp`, `certifi` |
 
 ## Install
 
@@ -30,10 +30,16 @@ pip install -r requirements.txt
 ### CLI
 
 ```bash
-# Generate speech
-python -m edge_tts_minimal speak "Hello world" -v en-US-AriaNeural -o output.mp3
+# 生成语音（默认中文女声）
+python -m edge_tts_minimal speak "你好世界"
 
-# List available voices
+# 指定发音人和输出文件
+python -m edge_tts_minimal speak "你好世界" -v zh-CN-XiaoxiaoNeural -o output.mp3
+
+# 英文
+python -m edge_tts_minimal speak "Hello world" -v en-US-AriaNeural
+
+# 列出所有 322 位发音人
 python -m edge_tts_minimal voices
 ```
 
@@ -45,8 +51,8 @@ from edge_tts_minimal import synthesize
 
 async def main():
     audio = await synthesize(
-        text="Hello, this is a test.",
-        voice="en-US-AriaNeural",
+        text="你好，这是一个测试。",
+        voice="zh-CN-XiaoxiaoNeural",
         output="test.mp3",
     )
 
@@ -58,10 +64,10 @@ asyncio.run(main())
 ```python
 ssml = """
 <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis'>
-    <voice name='en-US-AriaNeural'>
-        <prosody rate="slow">Hello</prosody>
+    <voice name='zh-CN-XiaoxiaoNeural'>
+        <prosody rate="slow">你好</prosody>
         <break time="500ms"/>
-        <prosody rate="fast">world!</prosody>
+        <prosody rate="fast">世界！</prosody>
     </voice>
 </speak>
 """
@@ -72,11 +78,12 @@ audio = await synthesize(ssml=ssml, output="styled.mp3")
 
 | Voice | Locale | Gender |
 |---|---|---|
+| `zh-CN-XiaoxiaoNeural` | Chinese (CN) | Female |
+| `zh-CN-YunxiNeural` | Chinese (CN) | Male |
+| `zh-CN-XiaoyiNeural` | Chinese (CN) | Female |
 | `en-US-AriaNeural` | English (US) | Female |
 | `en-US-GuyNeural` | English (US) | Male |
 | `en-GB-SoniaNeural` | English (UK) | Female |
-| `zh-CN-XiaoxiaoNeural` | Chinese (CN) | Female |
-| `zh-CN-YunxiNeural` | Chinese (CN) | Male |
 | `ja-JP-NanamiNeural` | Japanese | Female |
 | `ko-KR-SunHiNeural` | Korean | Female |
 

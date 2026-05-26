@@ -111,7 +111,7 @@ def _get_headers_and_data(data: bytes, header_length: int) -> tuple:
     return headers, data[header_length + 2:]
 
 
-def build_ssml(text: str, voice: str = "en-US-AriaNeural") -> str:
+def build_ssml(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
     """Wrap plain text in a minimal SSML document."""
     return (
         f"<speak version='1.0'"
@@ -126,7 +126,7 @@ def build_ssml(text: str, voice: str = "en-US-AriaNeural") -> str:
 async def synthesize(
     text: str | None = None,
     ssml: str | None = None,
-    voice: str = "en-US-AriaNeural",
+    voice: str = "zh-CN-XiaoxiaoNeural",
     output: str | None = None,
 ) -> bytes:
     """Synthesize speech and return MP3 bytes.
@@ -134,7 +134,7 @@ async def synthesize(
     Args:
         text:   Plain text to speak (mutually exclusive with *ssml*).
         ssml:   Raw SSML string. When provided, *voice* is ignored.
-        voice:  Short name of the neural voice (e.g. ``"en-US-AriaNeural"``).
+        voice:  Short name of the neural voice (e.g. ``"zh-CN-XiaoxiaoNeural"``).
         output: Optional file path to write the MP3 to.
 
     Returns:
