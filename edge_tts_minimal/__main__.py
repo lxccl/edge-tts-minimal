@@ -18,8 +18,12 @@ def main() -> None:
         return
 
     if len(sys.argv) > 1 and sys.argv[1] == "web":
+        port = 8100
+        for i, arg in enumerate(sys.argv):
+            if arg in ("-p", "--port") and i + 1 < len(sys.argv):
+                port = int(sys.argv[i + 1])
         from .web import run_server
-        run_server()
+        run_server(port=port)
         return
 
     parser = argparse.ArgumentParser(

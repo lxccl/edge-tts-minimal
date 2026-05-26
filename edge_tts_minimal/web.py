@@ -185,4 +185,11 @@ def run_server(port: int = 8100) -> None:
     import asyncio
     app = create_app()
     print(f"Edge TTS Web UI → http://127.0.0.1:{port}")
-    web.run_app(app, host="127.0.0.1", port=port)
+    try:
+        web.run_app(app, host="127.0.0.1", port=port)
+    except OSError as e:
+        if "10048" in str(e) or "address already in use" in str(e).lower():
+            print(f"Port {port} is already in use.", file=__import__("sys").stderr)
+            print(f"Try: edge-tts-minimal web -p {port + 1}", file=__import__("sys").stderr)
+        else:
+            raise
