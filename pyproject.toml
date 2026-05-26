@@ -7,7 +7,7 @@ name = "edge-tts-minimal"
 version = "0.1.0"
 description = "Free text-to-speech via Microsoft Edge's TTS service — no API key required"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.9",
@@ -20,3 +20,6 @@ edge-tts-minimal = "edge_tts_minimal.__main__:main"
 [project.urls]
 Homepage = "https://github.com/lxccl/edge-tts-minimal"
 Repository = "https://github.com/lxccl/edge-tts-minimal"
+
+[tool.setuptools.packages.find]
+include = ["edge_tts_minimal", "edge_tts_minimal.*"]
