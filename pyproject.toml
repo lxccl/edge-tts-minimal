@@ -18,5 +18,5 @@ dependencies = [
 edge-tts-minimal = "edge_tts_minimal.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/user/edge-tts-minimal"
-Repository = "https://github.com/user/edge-tts-minimal"
+Homepage = "https://github.com/lxccl/edge-tts-minimal"
+Repository = "https://github.com/lxccl/edge-tts-minimal"
